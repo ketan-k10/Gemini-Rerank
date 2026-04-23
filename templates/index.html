@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EEN Gemini Reranker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:    #2563eb;
+      --blue-dk: #1d4ed8;
+      --green:   #16a34a;
+      --red:     #dc2626;
+      --amber:   #d97706;
+      --bg:      #eef2f7;
+      --surface: #ffffff;
+      --border:  #e2e8f0;
+      --text:    #1e293b;
+      --muted:   #64748b;
+      --faint:   #94a3b8;
+      --radius:  14px;
+      --shadow:  0 2px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
+      --shadow-lg: 0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ─── Header ─────────────────────────────────────── */
+    .app-header {
+      background: linear-gradient(120deg, #0b1f3a 0%, #1a3a5c 45%, #1e4976 100%);
+      color: #fff;
+      padding: 0 28px;
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 3px 16px rgba(0,0,0,0.3);
+      position: sticky;
+      top: 0;
+      z-index: 200;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header-icon {
+      width: 32px; height: 32px;
+      background: rgba(255,255,255,0.12);
+      border: 1.5px solid rgba(255,255,255,0.22);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .header-icon svg { opacity: 0.9; }
+    .app-header h1 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-model {
+      font-size: 0.7rem;
+      color: rgba(255,255,255,0.55);
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.3px;
+    }
+    .header-tag {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: rgba(255,255,255,0.7);
+      background: rgba(37,99,235,0.4);
+      border: 1px solid rgba(255,255,255,0.15);
+      padding: 3px 11px;
+      border-radius: 20px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+    }
+
+    /* ─── Layout ──────────────────────────────────────── */
+    .main { max-width: 1720px; margin: 0 auto; padding: 20px 22px 40px; }
+
+    /* ─── Card ────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 13px 20px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .card-header:hover { background: #f1f5f9; }
+    .card-header h2 {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #334155;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-header h2 svg { color: var(--blue); flex-shrink: 0; }
+    .card-header-right { display: flex; align-items: center; gap: 8px; }
+    .card-body { padding: 20px; }
+    .card.collapsed .card-body { display: none; }
+    .collapse-icon {
+      color: var(--faint);
+      font-size: 0.7rem;
+      transition: transform 0.2s;
+      display: inline-block;
+    }
+    .card.collapsed .collapse-icon { transform: rotate(-90deg); }
+
+    /* ─── Form fields ─────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label {
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: #475569;
+      letter-spacing: 0.2px;
+    }
+    input[type=text], input[type=datetime-local], textarea, select {
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 0.83rem;
+      font-family: inherit;
+      background: #fff;
+      color: var(--text);
+      transition: border-color 0.15s, box-shadow 0.15s;
+      width: 100%;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    }
+    textarea {
+      resize: vertical;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.75rem;
+      line-height: 1.65;
+      color: #334155;
+    }
+    .field-hint { font-size: 0.7rem; color: var(--faint); }
+    .field-hint code {
+      background: #f1f5f9;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.7rem;
+      color: var(--blue);
+    }
+
+    /* ─── Config grid ─────────────────────────────────── */
+    .config-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 960px) { .config-grid { grid-template-columns: 1fr; } }
+
+    .token-field textarea {
+      min-height: 160px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.7rem;
+      color: #475569;
+    }
+
+    /* ─── Prompt section ──────────────────────────────── */
+    .prompt-section { display: flex; flex-direction: column; gap: 8px; }
+    .prompt-preset-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .prompt-preset-bar select {
+      flex: 1;
+      font-weight: 500;
+    }
+    .btn-outline {
+      white-space: nowrap;
+      padding: 8px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      background: #f8fafc;
+      color: #475569;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .btn-outline:hover { background: #f1f5f9; border-color: #cbd5e1; }
+
+    #cfg-prompt { min-height: 400px; }
+
+    /* ─── Search card ─────────────────────────────────── */
+    .search-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 180px 180px;
+      gap: 12px;
+      align-items: end;
+    }
+    @media (max-width: 900px) { .search-grid { grid-template-columns: 1fr 1fr; } }
+
+    .checkbox-wrap {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding-bottom: 10px;
+      white-space: nowrap;
+    }
+    .checkbox-wrap label { font-size: 0.8rem; color: #475569; cursor: pointer; }
+    input[type=checkbox] {
+      width: 15px; height: 15px;
+      cursor: pointer;
+      accent-color: var(--blue);
+    }
+
+    .search-footer {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .search-hint { font-size: 0.76rem; color: var(--faint); }
+
+    /* ─── Buttons ─────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+      white-space: nowrap;
+      text-decoration: none;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary {
+      background: var(--blue);
+      color: #fff;
+      box-shadow: 0 1px 4px rgba(37,99,235,0.3);
+    }
+    .btn-primary:hover {
+      background: var(--blue-dk);
+      box-shadow: 0 3px 10px rgba(37,99,235,0.4);
+    }
+    .btn-primary:disabled {
+      background: #93c5fd;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .btn-ghost {
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: #e2e8f0; }
+    .btn-sm { padding: 6px 12px; font-size: 0.75rem; }
+
+    /* ─── Save badge ──────────────────────────────────── */
+    .save-badge {
+      display: none;
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+
+    /* ─── Error box ───────────────────────────────────── */
+    .error-box {
+      display: none;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 10px;
+      padding: 12px 16px;
+      color: #b91c1c;
+      font-size: 0.82rem;
+      margin-bottom: 16px;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .error-box.visible { display: flex; }
+
+    /* ─── Progress ────────────────────────────────────── */
+    .progress-card {
+      display: none;
+      padding: 20px 24px;
+    }
+    .progress-card.visible { display: block; }
+    .steps-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 18px;
+    }
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+    }
+    .step-item:last-child { flex: none; }
+    .step-circle {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--faint);
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+    .step-item.active .step-circle {
+      border-color: var(--blue);
+      background: var(--blue);
+      color: #fff;
+      box-shadow: 0 0 0 4px rgba(37,99,235,0.15);
+      animation: pulse-ring 1.5s ease infinite;
+    }
+    .step-item.done .step-circle {
+      border-color: var(--green);
+      background: var(--green);
+      color: #fff;
+    }
+    @keyframes pulse-ring {
+      0%   { box-shadow: 0 0 0 0 rgba(37,99,235,0.35); }
+      70%  { box-shadow: 0 0 0 6px rgba(37,99,235,0); }
+      100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+    }
+    .step-label {
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--faint);
+      transition: color 0.3s;
+    }
+    .step-item.active .step-label { color: var(--blue); }
+    .step-item.done  .step-label { color: var(--green); }
+    .step-connector {
+      flex: 1;
+      height: 2px;
+      background: var(--border);
+      margin: 0 8px;
+      border-radius: 2px;
+      transition: background 0.3s;
+    }
+    .step-connector.done { background: var(--green); }
+    .progress-msg-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #progress-text { font-size: 0.82rem; color: #475569; }
+
+    /* ─── Results ─────────────────────────────────────── */
+    .results-container { display: none; }
+    .results-container.visible { display: block; }
+
+    .results-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 1100px) { .results-grid { grid-template-columns: 1fr; } }
+
+    .results-panel {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-header {
+      padding: 14px 18px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-header-orig {
+      background: linear-gradient(120deg, #1e3a5f 0%, #1d4ed8 100%);
+    }
+    .panel-header-rerank {
+      background: linear-gradient(120deg, #14532d 0%, #15803d 100%);
+    }
+    .panel-title { font-size: 0.9rem; font-weight: 700; }
+    .panel-sub   { font-size: 0.71rem; opacity: 0.72; margin-top: 2px; }
+    .panel-count {
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 2px 10px;
+      border-radius: 20px;
+    }
+
+    .images-scroll {
+      overflow-y: auto;
+      max-height: 82vh;
+      padding: 12px;
+    }
+    .images-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    /* ─── Image Card ──────────────────────────────────── */
+    .img-card {
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      border: 1.5px solid var(--border);
+      background: #f8fafc;
+      transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+      display: flex;
+      flex-direction: column;
+    }
+    .img-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.13);
+      border-color: #93c5fd;
+    }
+    .img-wrap {
+      position: relative;
+      width: 100%;
+      background: #0f172a;
+      flex-shrink: 0;
+    }
+    .img-wrap img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    /* Rank badge overlaid on image */
+    .badge-rank {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      background: rgba(15,23,42,0.75);
+      backdrop-filter: blur(4px);
+      color: #fff;
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 6px;
+      line-height: 1.4;
+    }
+    /* Score badge (reranked only) */
+    .badge-score {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 6px;
+      line-height: 1.4;
+    }
+    .bs-high { background: rgba(22,163,74,0.88);  color: #fff; }
+    .bs-med  { background: rgba(217,119,6,0.88);   color: #fff; }
+    .bs-low  { background: rgba(220,38,38,0.85);   color: #fff; }
+    .bs-zero { background: rgba(71,85,105,0.7);    color: #fff; }
+
+    .img-meta {
+      padding: 7px 9px 8px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .meta-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    .was-orig { font-size: 0.65rem; color: var(--faint); }
+    .cam-name {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #334155;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .attr-text {
+      font-size: 0.64rem;
+      color: var(--faint);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ts-text {
+      font-size: 0.62rem;
+      color: #94a3b8;
+    }
+
+    /* ─── Modal ───────────────────────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(5,10,20,0.82);
+      backdrop-filter: blur(3px);
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal-box {
+      background: var(--surface);
+      border-radius: 16px;
+      max-width: 1100px;
+      width: 100%;
+      max-height: 92vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.45);
+      border: 1px solid var(--border);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: #f8fafc;
+      flex-shrink: 0;
+    }
+    .modal-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #334155;
+    }
+    .modal-close {
+      background: #f1f5f9;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 30px; height: 30px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      display: flex; align-items: center; justify-content: center;
+      color: #475569;
+      transition: background 0.15s;
+    }
+    .modal-close:hover { background: #e2e8f0; }
+
+    .modal-body {
+      display: flex;
+      overflow: hidden;
+      flex: 1;
+    }
+    .modal-img-pane {
+      flex: 1 1 auto;
+      overflow: auto;
+      background: #0f172a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      min-width: 0;
+    }
+    .modal-img-pane img {
+      max-width: 100%;
+      max-height: calc(92vh - 120px);
+      height: auto;
+      border-radius: 8px;
+      display: block;
+    }
+    .modal-info-pane {
+      flex: 0 0 290px;
+      width: 290px;
+      border-left: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 20px;
+      background: #fff;
+    }
+    .modal-info-pane h4 {
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 12px;
+    }
+    .info-row {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-bottom: 14px;
+    }
+    .info-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .info-value {
+      font-size: 0.82rem;
+      color: var(--text);
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .info-score-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .big-score {
+      font-size: 1.8rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .big-score.sc-high { color: var(--green); }
+    .big-score.sc-med  { color: var(--amber); }
+    .big-score.sc-low  { color: var(--red); }
+    .big-score.sc-zero { color: var(--faint); }
+    .score-label { font-size: 0.75rem; color: var(--faint); }
+    .info-divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+  </style>
+</head>
+<body>
+
+<!-- ─── Header ──────────────────────────────────────────── -->
+<header class="app-header">
+  <div class="header-left">
+    <div class="header-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+    </div>
+    <h1>EEN Deep Search &amp; Gemini Reranker</h1>
+  </div>
+  <div class="header-right">
+    <span class="header-model">gemini-3.1-flash-lite-preview</span>
+    <span class="header-tag">Eagle Eye Networks</span>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- ─── Config ─────────────────────────────────────── -->
+  <div class="card" id="config-card">
+    <div class="card-header" onclick="toggleCard('config-card')">
+      <h2>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Configuration
+        <span style="font-size:0.71rem;font-weight:400;color:var(--faint)">— stored in your browser only</span>
+      </h2>
+      <div class="card-header-right">
+        <span class="save-badge" id="save-badge">Saved ✓</span>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); saveConfig()">Save Config</button>
+        <span class="collapse-icon">▼</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="config-grid">
+
+        <!-- Token -->
+        <div class="field token-field">
+          <label>EEN Auth Token</label>
+          <textarea id="cfg-token" placeholder="Paste your JWT Bearer token here (without the word 'Bearer')..."></textarea>
+          <span class="field-hint">Used for all EEN API calls and image downloads. Never sent to any third party.</span>
+        </div>
+
+        <!-- Prompt -->
+        <div class="prompt-section">
+          <label class="field" style="margin-bottom:0">
+            <span style="font-size:0.76rem;font-weight:600;color:#475569;letter-spacing:0.2px">Gemini Ranking Prompt</span>
+          </label>
+          <div class="prompt-preset-bar">
+            <select id="cfg-preset" onchange="onPresetChange()">
+              {% for p in prompt_presets %}
+              <option value="{{ p.id }}">{{ p.label }}</option>
+              {% endfor %}
+              <option value="custom">Custom (edited)</option>
+            </select>
+            <button class="btn-outline" onclick="resetPromptToPreset()">&#8635; Reset to Preset</button>
+          </div>
+          <textarea id="cfg-prompt" placeholder="Ranking prompt..."></textarea>
+          <span class="field-hint">
+            Placeholders substituted at runtime: <code>{query}</code>, <code>{n}</code>, <code>{n_minus_1}</code>.
+            Select a preset or edit freely — your edits are saved with Config.
+          </span>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Search ──────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header" style="cursor:default">
+      <h2>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        Search
+      </h2>
+    </div>
+    <div class="card-body">
+      <div class="search-grid">
+        <div class="field">
+          <label>Search Query</label>
+          <input type="text" id="query" placeholder="e.g. woman in blue burka" />
+        </div>
+        <div class="checkbox-wrap" style="padding-top:22px">
+          <input type="checkbox" id="disable-spellcheck" checked />
+          <label for="disable-spellcheck">Disable Spell Check</label>
+        </div>
+        <div class="field">
+          <label>From (UTC)</label>
+          <input type="datetime-local" id="ts-gte" />
+        </div>
+        <div class="field">
+          <label>To (UTC)</label>
+          <input type="datetime-local" id="ts-lte" />
+        </div>
+      </div>
+      <div class="search-footer">
+        <button class="btn btn-primary" id="search-btn" onclick="doSearch()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Search &amp; Rerank
+        </button>
+        <span class="search-hint">Fetches top 50 EEN results, draws bounding boxes, then reranks with Gemini in parallel</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Error ───────────────────────────────────────── -->
+  <div class="error-box" id="error-box">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span id="error-text"></span>
+  </div>
+
+  <!-- ─── Progress ────────────────────────────────────── -->
+  <div class="card progress-card" id="progress-card">
+    <div class="card-body">
+      <div class="steps-row">
+        <div class="step-item" id="step-1">
+          <div class="step-circle">1</div>
+          <span class="step-label">API Search</span>
+        </div>
+        <div class="step-connector" id="conn-1"></div>
+        <div class="step-item" id="step-2">
+          <div class="step-circle">2</div>
+          <span class="step-label">Download &amp; Annotate</span>
+        </div>
+        <div class="step-connector" id="conn-2"></div>
+        <div class="step-item" id="step-3">
+          <div class="step-circle">3</div>
+          <span class="step-label">Gemini Rerank</span>
+        </div>
+      </div>
+      <div class="progress-msg-row">
+        <div class="spinner"></div>
+        <span id="progress-text">Starting...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Results ─────────────────────────────────────── -->
+  <div class="results-container" id="results-container">
+    <div class="results-grid">
+
+      <!-- Original -->
+      <div class="results-panel">
+        <div class="panel-header panel-header-orig">
+          <div>
+            <div class="panel-title">Original EEN Results</div>
+            <div class="panel-sub" id="orig-subtitle">Ranked by EEN relevance &middot; bounding boxes drawn</div>
+          </div>
+          <span class="panel-count" id="orig-count"></span>
+        </div>
+        <div class="images-scroll">
+          <div class="images-grid" id="original-grid"></div>
+        </div>
+      </div>
+
+      <!-- Reranked -->
+      <div class="results-panel">
+        <div class="panel-header panel-header-rerank">
+          <div>
+            <div class="panel-title">Reranked by Gemini</div>
+            <div class="panel-sub" id="reranked-subtitle">Same images &middot; sorted by Gemini relevance score</div>
+          </div>
+          <span class="panel-count" id="reranked-count"></span>
+        </div>
+        <div class="images-scroll">
+          <div class="images-grid" id="reranked-grid"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- .main -->
+
+<!-- ─── Modal ───────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Image Detail</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-img-pane">
+        <img id="modal-img" src="" alt="Full size" />
+      </div>
+      <div class="modal-info-pane" id="modal-info"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const PROMPT_PRESETS = {{ prompt_presets | tojson }};
+
+  /* ── Init ────────────────────────────────────────────── */
+  document.addEventListener('DOMContentLoaded', () => {
+    loadConfig();
+    setDefaultDates();
+    document.getElementById('query').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doSearch();
+    });
+    document.getElementById('cfg-prompt').addEventListener('input', () => {
+      document.getElementById('cfg-preset').value = 'custom';
+    });
+  });
+
+  function setDefaultDates() {
+    const now = new Date();
+    const ago = new Date(now.getTime() - 24 * 3600 * 1000);
+    document.getElementById('ts-lte').value = toLocalDT(now);
+    document.getElementById('ts-gte').value = toLocalDT(ago);
+  }
+  function toLocalDT(d) { return d.toISOString().slice(0, 16); }
+  function toAPITS(dtLocal) { return dtLocal ? dtLocal + ':00.000+00:00' : ''; }
+
+  /* ── Prompt presets ──────────────────────────────────── */
+  function onPresetChange() {
+    const sel = document.getElementById('cfg-preset').value;
+    if (sel === 'custom') return;
+    const p = PROMPT_PRESETS.find(x => x.id === sel);
+    if (p) document.getElementById('cfg-prompt').value = p.text;
+  }
+  function resetPromptToPreset() {
+    const sel = document.getElementById('cfg-preset').value;
+    const target = sel === 'custom' ? PROMPT_PRESETS[0] : PROMPT_PRESETS.find(x => x.id === sel);
+    if (!target) return;
+    document.getElementById('cfg-preset').value = target.id;
+    document.getElementById('cfg-prompt').value = target.text;
+  }
+
+  /* ── Config persistence ──────────────────────────────── */
+  function loadConfig() {
+    const cfg = JSON.parse(localStorage.getItem('een_rerank_cfg') || '{}');
+    document.getElementById('cfg-token').value = cfg.token || '';
+    const pid = cfg.preset_id || PROMPT_PRESETS[0].id;
+    const known = PROMPT_PRESETS.find(p => p.id === pid);
+    document.getElementById('cfg-preset').value = known ? pid : 'custom';
+    document.getElementById('cfg-prompt').value = cfg.prompt || PROMPT_PRESETS[0].text;
+    if (cfg.token) document.getElementById('config-card').classList.add('collapsed');
+  }
+  function saveConfig() {
+    const cfg = {
+      token:     document.getElementById('cfg-token').value.trim(),
+      prompt:    document.getElementById('cfg-prompt').value,
+      preset_id: document.getElementById('cfg-preset').value,
+    };
+    localStorage.setItem('een_rerank_cfg', JSON.stringify(cfg));
+    const b = document.getElementById('save-badge');
+    b.style.display = 'inline-block';
+    setTimeout(() => { b.style.display = 'none'; }, 2200);
+  }
+  function toggleCard(id) { document.getElementById(id).classList.toggle('collapsed'); }
+
+  /* ── Error / Progress helpers ────────────────────────── */
+  function showError(msg) {
+    const box = document.getElementById('error-box');
+    document.getElementById('error-text').textContent = msg;
+    box.classList.add('visible');
+  }
+  function hideError() { document.getElementById('error-box').classList.remove('visible'); }
+
+  function setStep(n) {
+    for (let i = 1; i <= 3; i++) {
+      const el = document.getElementById('step-' + i);
+      el.className = 'step-item' + (i < n ? ' done' : i === n ? ' active' : '');
+      if (i < 3) {
+        const conn = document.getElementById('conn-' + i);
+        conn.className = 'step-connector' + (i < n ? ' done' : '');
+      }
+      // swap circle content
+      const circle = el.querySelector('.step-circle');
+      circle.textContent = i < n ? '✓' : String(i);
+    }
+  }
+
+  /* ── Search ──────────────────────────────────────────── */
+  async function doSearch() {
+    const cfg    = JSON.parse(localStorage.getItem('een_rerank_cfg') || '{}');
+    const token  = (cfg.token || '').replace(/^bearer\s+/i, '').trim();
+    const prompt = cfg.prompt || PROMPT_PRESETS[0].text;
+    const query  = document.getElementById('query').value.trim();
+
+    if (!token) { showError('EEN Auth Token is required — open Configuration above.'); return; }
+    if (!query) { showError('Please enter a search query.'); return; }
+
+    hideError();
+    document.getElementById('search-btn').disabled = true;
+    document.getElementById('progress-card').classList.add('visible');
+    document.getElementById('results-container').classList.remove('visible');
+    document.getElementById('original-grid').innerHTML = '';
+    document.getElementById('reranked-grid').innerHTML = '';
+    setStep(1);
+
+    const payload = {
+      token, prompt, query,
+      disable_spell_check: document.getElementById('disable-spellcheck').checked,
+      ts_gte: toAPITS(document.getElementById('ts-gte').value),
+      ts_lte: toAPITS(document.getElementById('ts-lte').value),
+    };
+
+    try {
+      const res     = await fetch('/search', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try { handleEvent(JSON.parse(line.slice(6))); } catch (_) {}
+        }
+      }
+    } catch (err) {
+      showError('Network error: ' + err.message);
+    }
+
+    document.getElementById('search-btn').disabled = false;
+    document.getElementById('progress-card').classList.remove('visible');
+  }
+
+  function handleEvent(ev) {
+    if (ev.type === 'progress') {
+      setStep(ev.step);
+      document.getElementById('progress-text').textContent = ev.msg;
+    } else if (ev.type === 'error') {
+      showError(ev.msg);
+      document.getElementById('search-btn').disabled = false;
+      document.getElementById('progress-card').classList.remove('visible');
+    } else if (ev.type === 'done') {
+      renderResults(ev);
+    }
+  }
+
+  /* ── Render results ──────────────────────────────────── */
+  function renderResults(data) {
+    document.getElementById('orig-subtitle').textContent  = 'EEN relevance order · bounding boxes drawn';
+    document.getElementById('reranked-subtitle').textContent = 'Reranked in ' + data.latency + 's by Gemini';
+    document.getElementById('orig-count').textContent     = data.original.length + ' results';
+    document.getElementById('reranked-count').textContent = data.reranked.length + ' results';
+
+    const og = document.getElementById('original-grid');
+    const rg = document.getElementById('reranked-grid');
+    og.innerHTML = '';
+    rg.innerHTML = '';
+
+    data.original.forEach(item => {
+      og.appendChild(buildCard({
+        rank: item.rank, imgB64: item.image,
+        actor: item.actor, timestamp: item.timestamp, attrSummary: item.attr_summary,
+        modalTitle: 'Original Result #' + item.rank,
+        modalData: { rank: '#' + item.rank, camera: item.actor, time: fmtTS(item.timestamp), attrs: item.attr_summary },
+      }));
+    });
+
+    data.reranked.forEach(item => {
+      rg.appendChild(buildCard({
+        rank: item.rank, imgB64: item.image,
+        score: item.score, origRank: item.original_rank,
+        actor: item.actor, timestamp: item.timestamp, attrSummary: item.attr_summary,
+        modalTitle: 'Gemini Rank #' + item.rank + ' — Score ' + item.score + '/100',
+        modalData: {
+          geminiRank: '#' + item.rank, score: item.score,
+          eenRank: '#' + item.original_rank, camera: item.actor,
+          time: fmtTS(item.timestamp), attrs: item.attr_summary
+        },
+      }));
+    });
+
+    document.getElementById('results-container').classList.add('visible');
+  }
+
+  function buildCard({ rank, imgB64, score, origRank, actor, timestamp, attrSummary, modalTitle, modalData }) {
+    const card = document.createElement('div');
+    card.className = 'img-card';
+    card.onclick = () => openModal('data:image/jpeg;base64,' + imgB64, modalTitle, modalData);
+
+    const hasScore = score !== undefined;
+    const scoreHtml = hasScore ? `<div class="badge-score ${scoreClass(score)}">${score}</div>` : '';
+    const wasHtml   = hasScore ? `<span class="was-orig">was #${origRank}</span>` : '';
+
+    card.innerHTML = `
+      <div class="img-wrap">
+        <img src="data:image/jpeg;base64,${imgB64}" alt="Result" loading="lazy" />
+        <div class="badge-rank">#${rank}</div>
+        ${scoreHtml}
+      </div>
+      <div class="img-meta">
+        <div class="meta-top">${wasHtml}</div>
+        <div class="cam-name">${actor || '—'}</div>
+        <div class="attr-text">${attrSummary}</div>
+        <div class="ts-text">${fmtTS(timestamp)}</div>
+      </div>`;
+    return card;
+  }
+
+  function scoreClass(s) {
+    return s >= 70 ? 'bs-high' : s >= 40 ? 'bs-med' : s > 0 ? 'bs-low' : 'bs-zero';
+  }
+
+  function fmtTS(ts) {
+    if (!ts) return '—';
+    try {
+      return new Date(ts).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', timeZoneName:'short' });
+    } catch (_) { return ts; }
+  }
+
+  /* ── Modal ───────────────────────────────────────────── */
+  function openModal(src, title, data) {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-img').src = src;
+
+    const pane = document.getElementById('modal-info');
+    let html = '<h4>Details</h4>';
+
+    if (data.score !== undefined) {
+      const cls = data.score >= 70 ? 'sc-high' : data.score >= 40 ? 'sc-med' : data.score > 0 ? 'sc-low' : 'sc-zero';
+      html += `<div class="info-score-row">
+        <div class="big-score ${cls}">${data.score}</div>
+        <div class="score-label">out of 100<br>Gemini score</div>
+      </div><hr class="info-divider">`;
+    }
+
+    const rows = [
+      data.rank       && ['Rank',          data.rank],
+      data.geminiRank && ['Gemini Rank',   data.geminiRank],
+      data.eenRank    && ['Original EEN',  data.eenRank],
+      data.camera     && ['Camera',        data.camera],
+      data.time       && ['Timestamp',     data.time],
+      data.attrs      && ['Attributes',    data.attrs],
+    ].filter(Boolean);
+
+    for (const [label, value] of rows) {
+      html += `<div class="info-row">
+        <span class="info-label">${label}</span>
+        <span class="info-value">${value || '—'}</span>
+      </div>`;
+    }
+
+    pane.innerHTML = html;
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    document.getElementById('modal-img').src = '';
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+</script>
+</body>
+</html>
