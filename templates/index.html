@@ -590,6 +590,45 @@
     .big-score.sc-zero { color: var(--faint); }
     .score-label { font-size: 0.75rem; color: var(--faint); }
     .info-divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+
+    /* ─── Modal nav ───────────────────────────────────── */
+    .modal-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 44px; height: 64px;
+      background: rgba(6,13,24,0.6);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #fff;
+      font-size: 1.2rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      transition: background 0.15s, opacity 0.15s;
+      z-index: 10;
+      user-select: none;
+    }
+    .modal-nav:hover { background: rgba(59,130,246,0.45); }
+    .modal-nav:disabled { opacity: 0.2; cursor: default; pointer-events: none; }
+    .modal-nav-prev { left: 10px; }
+    .modal-nav-next { right: 10px; }
+    .modal-nav-counter {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(6,13,24,0.65);
+      backdrop-filter: blur(4px);
+      color: rgba(255,255,255,0.7);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 12px;
+      border-radius: 20px;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -784,8 +823,11 @@
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div class="modal-img-pane">
+      <div class="modal-img-pane" style="position:relative">
+        <button class="modal-nav modal-nav-prev" id="modal-prev" onclick="modalNav(-1)">&#8249;</button>
         <img id="modal-img" src="" alt="Full size" />
+        <button class="modal-nav modal-nav-next" id="modal-next" onclick="modalNav(1)">&#8250;</button>
+        <div class="modal-nav-counter" id="modal-counter"></div>
       </div>
       <div class="modal-info-pane" id="modal-info"></div>
     </div>
@@ -962,6 +1004,9 @@
   }
 
   /* ── Render results ──────────────────────────────────── */
+  let _modalItems = [];
+  let _modalIndex = 0;
+
   function renderResults(data) {
     document.getElementById('orig-subtitle').textContent     = 'EEN relevance order · bounding boxes drawn';
     document.getElementById('reranked-subtitle').textContent = 'Reranked in ' + data.latency + 's by Gemini';
@@ -973,36 +1018,41 @@
     og.innerHTML = '';
     rg.innerHTML = '';
 
-    data.original.forEach(item => {
+    const origItems = data.original.map(item => ({
+      imgB64: item.image,
+      title: 'Original Result #' + item.rank,
+      data: { rank: '#' + item.rank, camera: item.actor, time: fmtTS(item.timestamp), attrs: item.attr_summary },
+    }));
+    const rerankItems = data.reranked.map(item => ({
+      imgB64: item.image,
+      title: 'Gemini Rank #' + item.rank + ' — Score ' + item.score + '/100',
+      data: { geminiRank: '#' + item.rank, score: item.score, eenRank: '#' + item.original_rank, camera: item.actor, time: fmtTS(item.timestamp), attrs: item.attr_summary },
+    }));
+
+    data.original.forEach((item, i) => {
       og.appendChild(buildCard({
         rank: item.rank, imgB64: item.image,
         actor: item.actor, timestamp: item.timestamp, attrSummary: item.attr_summary,
-        modalTitle: 'Original Result #' + item.rank,
-        modalData: { rank: '#' + item.rank, camera: item.actor, time: fmtTS(item.timestamp), attrs: item.attr_summary },
+        onOpen: () => openModal(origItems, i),
       }));
     });
 
-    data.reranked.forEach(item => {
+    data.reranked.forEach((item, i) => {
       rg.appendChild(buildCard({
         rank: item.rank, imgB64: item.image,
         score: item.score, origRank: item.original_rank,
         actor: item.actor, timestamp: item.timestamp, attrSummary: item.attr_summary,
-        modalTitle: 'Gemini Rank #' + item.rank + ' — Score ' + item.score + '/100',
-        modalData: {
-          geminiRank: '#' + item.rank, score: item.score,
-          eenRank: '#' + item.original_rank, camera: item.actor,
-          time: fmtTS(item.timestamp), attrs: item.attr_summary
-        },
+        onOpen: () => openModal(rerankItems, i),
       }));
     });
 
     document.getElementById('results-container').classList.add('visible');
   }
 
-  function buildCard({ rank, imgB64, score, origRank, actor, timestamp, attrSummary, modalTitle, modalData }) {
+  function buildCard({ rank, imgB64, score, origRank, actor, timestamp, attrSummary, onOpen }) {
     const card = document.createElement('div');
     card.className = 'img-card';
-    card.onclick = () => openModal('data:image/jpeg;base64,' + imgB64, modalTitle, modalData);
+    card.onclick = onOpen;
 
     const hasScore = score !== undefined;
     const scoreHtml = hasScore ? `<div class="badge-score ${scoreClass(score)}">${score}</div>` : '';
@@ -1035,9 +1085,23 @@
   }
 
   /* ── Modal ───────────────────────────────────────────── */
-  function openModal(src, title, data) {
+  function openModal(items, index) {
+    _modalItems = items;
+    _modalIndex = index;
+    renderModalItem();
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+
+  function renderModalItem() {
+    const item = _modalItems[_modalIndex];
+    const { title, data, imgB64 } = item;
+    const n = _modalItems.length;
+
     document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-img').src = src;
+    document.getElementById('modal-img').src = 'data:image/jpeg;base64,' + imgB64;
+    document.getElementById('modal-counter').textContent = (_modalIndex + 1) + ' / ' + n;
+    document.getElementById('modal-prev').disabled = _modalIndex === 0;
+    document.getElementById('modal-next').disabled = _modalIndex === n - 1;
 
     const pane = document.getElementById('modal-info');
     let html = '<h4>Details</h4>';
@@ -1065,16 +1129,28 @@
         <span class="info-value">${value || '—'}</span>
       </div>`;
     }
-
     pane.innerHTML = html;
-    document.getElementById('modal-overlay').classList.add('open');
+  }
+
+  function modalNav(dir) {
+    const next = _modalIndex + dir;
+    if (next >= 0 && next < _modalItems.length) {
+      _modalIndex = next;
+      renderModalItem();
+    }
   }
 
   function closeModal() {
     document.getElementById('modal-overlay').classList.remove('open');
     document.getElementById('modal-img').src = '';
   }
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+    if (document.getElementById('modal-overlay').classList.contains('open')) {
+      if (e.key === 'ArrowLeft')  modalNav(-1);
+      if (e.key === 'ArrowRight') modalNav(1);
+    }
+  });
 </script>
 </body>
 </html>
